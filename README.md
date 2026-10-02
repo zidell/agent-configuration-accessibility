@@ -1,71 +1,67 @@
 # Agent Configuration Accessibility
 
-[English](README.md) · [한국어](README.ko.md)
+[한국어](README.md) · [English](README.en.md)
 
-Users increasingly ask AI agents to install apps and change their preferences.
-A request such as “turn off the recording start sound” or “transcribe in Japanese”
-should let an agent find the installed app and make the right change.
+최근에는 사용자가 앱 설치부터 환경설정 변경까지 AI 에이전트에게 맡기는 일이 늘고 있다.
+“녹음 시작 소리 꺼줘”, “일본어로 받아쓰게 해줘”처럼 원하는 결과를 말하면,
+에이전트가 설치된 앱을 찾고 필요한 설정을 바꾸는 방식이다.
 
-With installed binary apps, this process often stops at discovery. The configuration
-file may be hard to find, or its fields may lack descriptions and allowed values.
-Documentation elsewhere does little if an agent cannot find it from the installed app.
+그런데 설치형 바이너리 앱에서는 이 과정이 쉽게 끊긴다. 설정 파일 위치가 알려져 있지
+않거나, 파일을 찾아도 각 항목의 의미와 허용값을 알 수 없는 경우가 많다. 다른 곳에
+문서가 있더라도 설치된 앱 안에서 발견할 수 없다면 작업이 끊길 수 있다.
 
-This guide defines **conventions for discovering and changing preferences using the
-installed app alone**. It is intended for developers of macOS, Windows, and Linux apps.
-The goal is to lead an agent to the active configuration file and provide the information
-needed to edit it there.
+이 문서는 **설치된 앱만으로 환경설정을 발견하고 변경할 수 있게 하는 공통 컨벤션**을
+정리한다. macOS·Windows·Linux 앱 개발자가 제품에 적용하고, 출시 전에 에이전트의
+작업 흐름으로 검증할 수 있도록 구성했다. 핵심은 에이전트가 실제 설정 파일에 도달하게
+하고, 그 안에서 필요한 설명을 모두 얻을 수 있게 만드는 것이다.
 
-The conventions do not depend on a particular agent's automatic discovery behavior.
-They support several routes: installation notes, executable help, and conventional
-user configuration locations. They are practical design guidance, not an established
-standard that every agent follows.
+특정 에이전트 제품의 자동 탐색 기능에 의존하지 않는다. 설치 안내를 읽거나, 실행 파일의
+도움말을 확인하거나, 일반적인 사용자 설정 경로를 찾아보는 여러 접근을 지원한다.
+다른 앱에도 적용할 수 있는 실무 지침이며, 어느 도구나 반드시 따르는 표준은 아니다.
 
-This guide covers design principles, format choices, and discovery, editing, and
-application workflows. Implementation examples and test results are in the
-[separate validation report](docs/benchmarks.md).
+이 문서는 설계 원칙과 형식 선택, 발견·편집·적용 절차를 다룬다. 적용 사례와 시험 결과는
+[별도 검증 기록](docs/benchmarks.md)에 정리했다.
 
-## From a user's request to the active configuration
+## 사용자의 요청에서 실제 설정 파일까지
 
-A natural-language request should connect to this workflow:
+사용자의 자연어 요청에서 다음 흐름으로 연결되어야 한다.
 
 ```text
-“Turn off the app's recording start sound”
-  → Find the installed app / executable
-  → Read readme.txt, --help, or a conventional user configuration location
-  → Find the config.* file that the app actually loads
-  → Read field descriptions, allowed values, and application instructions
-  → Change only the requested values
-  → Reload / restart
-  → Verify that the app applied the changes
+“앱의 녹음 시작 소리 꺼줘”
+  → 설치된 앱 / 실행 파일 발견
+  → readme.txt 또는 --help 또는 일반적인 사용자 설정 경로
+  → 실제로 로드하는 config.* 파일 발견
+  → 파일 안의 항목 설명, 허용값, 적용 방법 확인
+  → 요청한 값만 수정
+  → 재로드 / 재시작
+  → 앱에 반영됐는지 검증
 ```
 
-The goal is not to make an agent read a particular instruction file. Whichever route
-it takes should lead to the same active configuration file, and **that file should
-provide enough information to make the change**. Discovery and configuration should
-be possible starting from the installed app's location.
+핵심은 특정 지침 파일을 반드시 읽게 하는 것이 아니다. 에이전트가 어느 경로를
+선택하든 같은 실제 설정 파일에 도달하고, **그 파일만 읽어도 변경할 수 있어야 한다.**
+설치된 앱의 경로에서 안내와 설정을 발견하고 작업을 마칠 수 있어야 한다.
 
-## Best practices and designs to avoid
+## Best practices와 피해야 할 설계
 
-A good design lets the agent obtain answers from the installed app. The comparison
-below focuses on reaching and applying the correct configuration, beyond simply
-having an instruction file.
+좋은 설계는 에이전트가 새 기능을 추측하게 만드는 대신, 설치된 앱에서 답을 얻도록 한다.
+아래 비교는 안내 파일의 존재 여부보다 **설정에 도달하고 올바르게 적용할 수 있는지**에
+초점을 둔다.
 
-| Situation | Best practice | Worst practice |
+| 상황 | Best practice | Worst practice |
 | --- | --- | --- |
-| Discovering the location | Installed `readme.txt` and `--help` lead to the active user file | Location is documented only somewhere inaccessible from the installation |
-| File naming | A clear name such as `config.toml` | An obscure name or settings stored only in an internal database |
-| Understanding fields | Explain the function, type, allowed values, and units next to each key | Undocumented abbreviations and numeric codes |
-| Active configuration | Distinguish defaults and examples from the active user file | Imply that editing an example in the install folder applies changes |
-| Saving files | GUI saves retain standard field descriptions | The first save removes all explanatory comments |
-| New installations | Provide a way to obtain an annotated default file | No file, example, or documented creation method |
-| Applying external edits | Explain reload/restart steps and when changes take effect | Recommend pressing Save in a window that overwrites edits with old values |
-| Invalid values | Identify the field, allowed values, and whether previous values are retained | Silently ignore values or replace them with defaults |
-| Verification | Check the values the app loaded and the resulting behavior | Report success just because text changed in a file |
-| Upgrades | Define precedence and migration between old and new files | Rename files and lose existing user preferences |
+| 설정 위치 발견 | 설치된 `readme.txt`와 `--help`가 실제 사용자 파일로 연결 | 설치 환경에서 찾을 수 없는 곳에만 경로를 적음 |
+| 파일 이름 | `config.toml`처럼 용도가 분명한 이름 | 의미를 알기 어려운 이름이나 내부 DB에만 저장 |
+| 항목 이해 | 키 바로 위에 기능·타입·허용값·단위를 설명 | 설명 없는 약어와 숫자 코드만 제공 |
+| 실제 사용 파일 | 기본 템플릿과 실제 활성 사용자 파일을 구분 | 설치 폴더의 예제 파일을 수정하면 반영될 것처럼 안내 |
+| 파일 저장 | GUI에서 저장해도 표준 항목 설명이 남음 | 첫 저장에서 안내 주석이 전부 사라짐 |
+| 신규 설치 | 주석 포함 기본 파일을 얻는 방법을 제공 | 파일도 예제도 없고 생성 방법도 설명하지 않음 |
+| 외부 수정 반영 | 재로드·재시작 절차와 적용 시점을 설명 | 설정 창의 Save를 누르라고 안내하지만 이전 값으로 덮어씀 |
+| 잘못된 값 | 오류 항목·허용값·기존 값 유지 여부를 알려줌 | 무시하거나 기본값으로 바꾸고 아무 신호도 주지 않음 |
+| 검증 | 실제 앱이 로드한 값과 기능 동작을 확인 | 파일에 문자열이 바뀌었다는 이유만으로 작동한다고 보고 |
+| 업그레이드 | 기존 파일과 새 파일의 우선순위·이관을 정의 | 파일 이름을 바꾸면서 기존 사용자 값을 잃음 |
 
-Suppose the user asks to turn off the recording start sound. This file does not tell
-an agent whether `sound` controls an effect or system output, or whether `0` means
-disabled or default:
+예를 들어 사용자가 “녹음 시작 소리 꺼줘”라고 요청했다고 하자. 다음 파일에서는 `sound`가
+효과음인지 시스템 출력인지, `0`이 꺼짐인지 기본값인지 알기 어렵다.
 
 ```ini
 [settings]
@@ -74,84 +70,84 @@ mode=1
 limit=30
 ```
 
-The same settings can provide enough context in the file itself:
+같은 설정도 아래처럼 제공하면 필요한 판단을 파일 안에서 끝낼 수 있다.
 
 ```ini
 [settings]
-# Recording start sound volume. Integer 0..200 (%), default 100.
-# 0 disables the sound. Separate from muting system output during recording.
+# 녹음 시작 효과음 음량. 정수 0..200 (%), 기본값 100.
+# 0으로 바꾸면 효과음이 꺼집니다. 녹음 중 시스템 음소거와는 별개입니다.
 sound_volume=100
 
-# true: record while held / false: press again to stop.
-# Allowed values: true/false. Default: true.
+# true: 키를 누르는 동안 녹음 / false: 다시 누르면 종료.
+# 허용값 true/false, 기본값 true.
 hold=true
 
-# Recording limit in minutes. Allowed values: 10/20/30/60. Default: 30.
+# 녹음 시간 제한. 분 단위, 허용값 10/20/30/60, 기본값 30.
 limit_minutes=30
 ```
 
-This example assumes an INI parser that supports `#` comments. Examples must match
-the syntax the app actually supports.
+이 예시는 `#` 주석을 지원하는 INI 파서를 가정한다. 실제 앱이 지원하는 문법과
+안내의 예시를 일치시켜야 한다.
 
-## Make instructions discoverable in the installed app
+## 설치된 앱에서 안내를 발견하게 만들기
 
-Ship a UTF-8 `readme.txt` with the installation. An agent should be able to find it
-from the installed app's location and follow it to the active user configuration.
+앱이 설치되는 위치에 UTF-8 `readme.txt`를 배포한다. 설치된 앱의 경로에서 안내를
+발견하고 실제 사용자 설정 파일에 도달할 수 있게 한다.
 
-| Platform | Suggested instruction location | Typical user configuration location |
+| 플랫폼 | 안내 파일의 권장 위치 | 사용자 설정 파일의 일반적인 위치 |
 | --- | --- | --- |
 | macOS | `App.app/Contents/Resources/readme.txt` | `~/Library/Application Support/<app-id>/config.toml` |
-| Windows | `readme.txt` beside the installed executable | `%APPDATA%\<app-id>\config.toml` |
+| Windows | 설치된 실행 파일 옆의 `readme.txt` | `%APPDATA%\<app-id>\config.toml` |
 | Linux | `<prefix>/share/doc/<app-id>/readme.txt` | `${XDG_CONFIG_HOME:-~/.config}/<app-id>/config.toml` |
 
-Use the platform's package structure: bundle resources on macOS, the executable
-directory on Windows, and an app-specific documentation directory on Linux.
-A generically named instruction file in a shared executable directory is ambiguous.
-Packaging may change user data locations. If the app provides a path command,
-prefer its active path over a generic path listed in documentation.
+각 플랫폼의 패키지 구조에 맞춰 안내를 포함한다. macOS는 앱 번들 리소스, Windows는
+실행 파일 디렉터리, Linux는 앱별 문서 디렉터리를 사용한다. 여러 앱이 공유하는
+실행 파일 디렉터리에 일반적인 이름의 안내를 놓으면 어느 앱의 문서인지 알기 어렵다.
+패키징에 따라 사용자 데이터 경로가 달라질 수 있으므로, 경로를 출력하는 명령이 있다면
+문서의 일반적인 경로보다 실제 앱이 알려주는 활성 경로를 우선한다.
 
-Start the instructions with:
+안내의 첫 부분에는 다음을 적는다.
 
-1. The app name and the purpose of these installation instructions.
-2. User configuration locations and the command that prints the active path.
-3. The distinction between installed examples/defaults and the active user file.
-4. Editable formats, comment support, and reload/restart steps.
-5. How to create the configuration when it does not exist yet.
-6. Where credentials are stored and how they relate to general preferences.
+1. 이 앱의 이름과 이 파일이 설치 사용자용 안내라는 점.
+2. 실제 사용자 설정 파일의 OS별 경로 및 경로를 출력하는 명령.
+3. 설치 폴더의 기본값·예제 파일과 실제 사용자 파일의 차이.
+4. 편집 가능한 형식, 주석 지원 여부, 재로드·재시작 방법.
+5. 처음 설치해서 설정 파일이 없을 때 생성하는 방법.
+6. 자격 증명 위치와 일반 환경설정의 관계.
 
-The instructions should be complete using only files in the installed app.
-Update them alongside the configuration schema. Check every distribution format;
-including instructions in an MSIX does not cover a separately distributed EXE.
+안내는 설치된 앱 안에서 읽는 것만으로 완결되어야 한다. 버전 업데이트 시 안내와
+설정 스키마를 함께 갱신한다. 설치 형식이 여러 개라면 각각 검사한다.
+특히 단독 EXE 배포는 MSIX에 문서가 포함됐다는 이유만으로 통과 처리하지 않는다.
 
-## Make the configuration itself understandable and editable
+## 설정 파일 자체를 읽고 변경할 수 있게 만들기
 
-Use a recognizable name such as `config.toml`, `config.ini`, or `config.<app-name>`.
-Where practical, use the same format and key names across platforms. Paths can vary
-while a setting's meaning and value representation remain consistent.
+`config.toml`, `config.ini`, `config.<app-name>`처럼 목적을 추측할 수 있는 이름을 쓴다.
+여러 OS에서 같은 앱을 만들 때는 가능하면 파일 형식과 키 이름도 통일한다. OS별 경로는
+달라도 “소리를 끈다”는 의미와 값 표현이 같으면 문서와 에이전트의 작업이 단순해진다.
 
-### Choosing TOML, INI, or JSON
+### TOML, INI, JSON 중 무엇을 선택할까?
 
-For a new app with human-editable preferences, **consider TOML first**. Comments,
-typed values, and arrays let descriptions sit beside values. This recommendation
-follows the format's properties, not a comparison of agent success rates by format.
+새 앱에서 사람이 직접 읽고 고치는 환경설정을 설계한다면 **TOML을 우선 검토할 만하다.**
+주석과 타입, 배열을 함께 표현할 수 있어 항목 설명을 값 바로 옆에 둘 수 있기 때문이다.
+다만 이는 형식의 특성에 따른 설계 권고이며, 형식별 에이전트 성공률을 비교한 결론은 아니다.
 
-| Format | Strengths | Considerations | Suitable use |
+| 형식 | 강점 | 주의할 점 | 잘 맞는 경우 |
 | --- | --- | --- | --- |
-| TOML | Comments, explicit value types, arrays, and groups | Specify the supported syntax/version and parser | General preferences that people read and agents edit selectively |
-| INI | Compact, easy to edit for flat settings | Comments, types, arrays, and escaping vary by parser | Simple settings in apps already using an INI library |
-| JSON | Broad tooling and consistent nesting, arrays, and types | Standard JSON has no comments | Existing JSON designs with bundled schemas or description commands |
-| JSONC | JSON-like structure with comments | A standard JSON parser cannot be assumed to accept it | Apps and tools explicitly supporting the same JSONC syntax |
+| TOML | 주석, 명시적 값 타입, 배열·그룹을 함께 표현 | 앱이 실제로 지원하는 TOML 문법·버전과 파서를 명확히 해야 함 | 사람이 읽고 에이전트가 일부 항목을 수정하는 일반 설정 |
+| INI | 평평한 설정을 짧게 읽고 고치기 쉬움 | 주석·타입·배열·이스케이프 방식이 파서마다 다름 | 기존 네이티브 라이브러리가 INI를 사용하고 설정이 단순한 앱 |
+| JSON | 도구 지원이 넓고 중첩·배열·타입을 일관되게 표현 | 표준 JSON에는 주석이 없음 | 기존 구조가 JSON이거나 스키마·설명 출력 기능이 함께 있는 앱 |
+| JSONC | JSON 형태에 주석을 추가 | 표준 JSON 파서로 그대로 읽을 수 있다고 가정하면 안 됨 | 앱과 관련 도구가 같은 JSONC 문법을 명시적으로 지원하는 경우 |
 
-The [TOML specification](https://toml.io/en/v1.0.0) defines `#` comments, value types,
-and arrays. [Standard JSON (RFC 8259)](https://www.rfc-editor.org/rfc/rfc8259) has no
-comment syntax. Document INI comments, escaping, and lists according to the chosen parser.
+[TOML 명세](https://toml.io/en/v1.0.0)는 `#` 주석과 값 타입·배열을 정의한다.
+표준 [JSON 문법(RFC 8259)](https://www.rfc-editor.org/rfc/rfc8259)에는 주석 표현이 없다.
+INI는 채택한 파서의 주석·문자열 이스케이프·목록 처리 문법을 기준으로 설명해야 한다.
 
-JSON is suitable for agent editing too. The question is where descriptions come from.
-Before migrating an existing JSON app solely for this purpose, consider bundling a
-schema or providing a command that prints descriptions.
+JSON도 에이전트가 읽고 수정하기에는 충분히 사용할 수 있다. 설명을 어디에서 얻는지가
+문제다. 기존 JSON 앱을 이 목적만으로 다른 형식으로 옮기기 전에, 설치 패키지에
+스키마를 포함하거나 실행 파일에서 설명을 출력하는 방법을 검토한다.
 
-For example, `config.json` holds values while `config.schema.json` describes the
-same keys. Installation notes or help should explain the relationship:
+예를 들어 `config.json`은 값을 담고, `config.schema.json`은 같은 키의 의미와 범위를 담는다.
+설치 안내나 도움말이 두 파일의 관계를 알려줘야 한다.
 
 ```json
 {
@@ -167,12 +163,12 @@ same keys. Installation notes or help should explain the relationship:
   "properties": {
     "auto_send": {
       "type": "boolean",
-      "description": "Presses the actual Enter key after pasting.",
+      "description": "붙여넣기 후 실제 Enter 키를 입력합니다.",
       "default": true
     },
     "recording_start_sound_volume": {
       "type": "integer",
-      "description": "Recording start sound volume (%). 0 disables it.",
+      "description": "녹음 시작 효과음 음량(%). 0이면 끄기.",
       "minimum": 0,
       "maximum": 200,
       "default": 100
@@ -181,112 +177,110 @@ same keys. Installation notes or help should explain the relationship:
 }
 ```
 
-[JSON Schema annotations](https://json-schema.org/understanding-json-schema/reference/annotations)
-can convey meanings and defaults. Declaring `default` does not make an app apply it
-automatically; the loader must implement defaults and validation.
+[JSON Schema의 설명 속성](https://json-schema.org/understanding-json-schema/reference/annotations)은
+항목의 의미와 기본값을 전달하는 데 쓸 수 있다. 스키마의 `default`를 적었다고 앱이 그
+값을 자동으로 적용하는 것은 아니다. 앱의 로더가 기본값과 검증 규칙을 실제로 구현해야 한다.
 
-The decisive factor is **whether an agent can determine meaning, valid values, and
-application steps**, rather than the extension. Well-documented JSON is better than
-undocumented TOML. A comment-capable format is more direct when the goal is to get
-all necessary information by opening one configuration file.
+중요한 기준은 확장자가 아니라 **파일을 읽은 에이전트가 의미·범위·적용 방법을 확실히
+알 수 있는가**다. 설명이 충실한 JSON 설계가 설명 없는 TOML보다 낫다. 다만 “설정 파일
+하나만 열어도 모두 알 수 있게 한다”는 목표에는 주석 가능한 형식이 더 직접적이다.
 
-### Should an existing app migrate to TOML?
+### 기존 앱도 TOML로 바꿔야 할까?
 
-Do not migrate an existing INI or JSON app just because this guide recommends TOML.
-First check whether the current format can support descriptions, discovery, and
-application instructions. Plan a migration when arrays, nesting, or cross-platform
-consistency justify the cost.
+이미 운영하는 앱의 INI나 JSON을 이 지침만으로 바로 옮길 필요는 없다. 먼저 현재 형식에서
+항목 설명과 발견·적용 경로를 제공할 수 있는지 확인한다. 변경 비용에 비해 배열·중첩
+구조나 OS 간 통일이 주는 이점이 충분할 때 형식 이관을 계획한다.
 
-Changing the extension alone is insufficient. Verify the parser, value representation,
-and compatibility with existing installations. Define how to retain original files
-and migrate both preferences and credentials.
+형식을 통일할 때는 확장자만 바꾸지 말고 파서·값 표현·기존 설치 호환성까지 함께
+검증한다. 원본 파일을 보존하고 일반 설정과 자격 증명을 함께 이관하는 절차를 정의한다.
 
-### What each field description should include
+### 항목별 설명에 포함할 정보
 
-Write descriptions into the active user file that the GUI saves. Avoid designs where
-only the distributed template has comments and the first GUI save removes them.
+앱이 GUI에서 저장하는 실제 사용자 파일에도 항목별 설명을 출력한다.
+배포 템플릿에만 주석이 있고 첫 GUI 저장에서 설명이 사라지는 구조는 피한다.
 
-| Information | Example |
+각 항목에는 다음 정보를 제공한다.
+
+| 정보 | 예 |
 | --- | --- |
-| Function in user terms | “Recording start sound volume” |
-| Value type | Integer, boolean, string, string array |
-| Default | `100` |
-| Allowed values, range, and unit | `0`–`200`, `%` |
-| Special values | `0` disables the sound |
-| Dependencies | Service, model, or OS restrictions |
-| When it takes effect | Immediately, on reload, on restart, or on the next recording |
-| Side effects | Automatic sending presses the actual Enter key after pasting |
+| 기능과 사용자 표현 | “녹음 시작 효과음의 음량” |
+| 값의 타입 | 정수, 불리언, 문자열, 문자열 배열 |
+| 기본값 | 기본 `100` |
+| 허용값·범위·단위 | `0`–`200`, 단위 `%` |
+| 특별한 값 | `0`은 효과음 끄기 |
+| 의존 조건 | 특정 서비스·모델·OS에서만 적용되는지 |
+| 적용 시점 | 즉시, 재로드, 재시작, 다음 녹음부터 |
+| 부작용 | 자동 전송은 붙여넣기 후 실제 Enter 입력 |
 
-Describe separate settings clearly enough to distinguish “mute the recording sound”
-from “mute system output during recording.”
+예를 들어 “음소거해줘”가 녹음 효과음을 끄라는 뜻인지, 녹음 중 시스템 출력을
+끄라는 뜻인지 서로 구분할 수 있게 항목을 설명한다.
 
 ```toml
-# Presses the actual Enter key after pasting.
-# Type: boolean. Allowed values: true / false. Default: true.
+# 붙여넣기 후 실제 Enter 키를 입력합니다.
+# 타입: 불리언. 허용값: true / false. 기본값: true.
 auto_send = true
 
-# Recording start sound volume. Integer 0..200 (%), default 100.
-# 0 disables the sound. Separate from muting system output during recording.
+# 녹음 시작 효과음 음량. 정수 0..200 (%), 기본값 100.
+# 0은 효과음 끄기입니다. 녹음 중 시스템 음소거와는 별개입니다.
 recording_start_sound_volume = 100
 
-# Recording control. "hold": record while held / "toggle": press again to stop.
-# Default: "hold". Restart the app after editing this file.
+# 녹음 방식. "hold": 누르는 동안 녹음 / "toggle": 다시 누르면 종료.
+# 기본값 "hold". 파일 편집 후 앱을 다시 실행하면 적용됩니다.
 recording_control = "hold"
 ```
 
-The file header should identify the app, format, editing/application steps, and
-credential separation. State whether custom comments are preserved. Where practical,
-generate validation rules, defaults, descriptions, and documentation from one schema.
+파일 첫머리에는 앱 이름, 형식, 편집·적용 방법, 자격 증명 분리 여부를 적는다.
+사용자 정의 주석을 보존할 수 없다면 그 사실도 명시한다. 가능하면 앱의 설정
+스키마에서 파서 검증·기본값·항목 설명·문서를 함께 생성해 서로 어긋나지 않게 한다.
 
-## Provide configuration discovery through the executable
+## 실행 파일에서도 설정을 찾을 수 있게 만들기
 
-Provide at least the following capabilities; command names may differ:
+최소한 다음과 같은 기능을 제공한다. 명령 이름은 앱마다 달라도 된다.
 
 ```text
 app --help
-  Explain the path-discovery command and local instruction location
+  설정 위치를 찾는 명령과 로컬 안내 위치를 설명
 
 app --config-path
-  Print the absolute path of the active user configuration to stdout
+  실제 활성 사용자 설정 파일의 절대 경로를 stdout으로 출력
 ```
 
-Handle discovery commands before creating a GUI, recording, making network requests,
-or requesting accessibility/microphone permissions, then exit. They should work on a
-new installation. A path-only command should not change preferences or credentials.
-If the file does not exist yet, explain that the printed path is its creation location.
+설정 발견 명령은 GUI 생성, 녹음, 네트워크 요청, 접근성·마이크 권한 요청 전에
+처리하고 종료한다. 처음 설치한 상태에도 실행할 수 있어야 한다. 경로만 출력하는
+명령은 설정이나 자격 증명을 바꾸지 않는다. 파일이 아직 없다면 그 경로가 향후
+생성 위치임을 도움말에 설명한다.
 
-Additional capabilities can simplify initial setup and verification:
+다음 기능을 제공하면 설치 직후 자동 설정과 검증까지 더 쉽게 만들 수 있다.
 
-- Print default configuration with field-description comments.
-- Create an initial configuration without overwriting an existing file.
-- Validate edited configuration and report error locations and allowed values.
-- Show loaded non-secret preferences.
-- Reload settings or support reliable file watching.
+- 기본 설정을 항목 설명 주석과 함께 출력하는 명령.
+- 기존 파일을 덮어쓰지 않고 초기 설정을 생성하는 명령.
+- 변경한 설정을 검사하고 오류 위치·허용값을 반환하는 명령.
+- 적용된 비밀이 아닌 설정 값을 확인하는 명령.
+- 실행 중 설정을 재로드하는 명령 또는 안정적인 파일 감시.
 
-For Windows GUI executables, check console output handling as well. Help and paths
-must be available when an agent captures stdout through a pipe or redirects it to a file.
+Windows의 GUI 실행 파일은 콘솔 출력 처리도 확인해야 한다. 에이전트가 stdout을
+파이프로 캡처하거나 파일로 리다이렉트하는 경우에도 도움말과 경로가 전달되어야 한다.
 
-## From a file edit to an applied change
+## 파일을 고친 뒤 앱에 반영되기까지
 
-Document a workflow an agent can follow:
+에이전트가 수행할 수 있는 절차를 앱이 문서화한다.
 
-1. Identify the installed app version and active configuration file.
-2. Wait for ongoing work to finish and close the app if required.
-3. Read relevant fields and change requested values while preserving other values.
-4. Validate syntax, types, and ranges, then replace the file atomically.
-5. Reload or restart using the documented procedure.
-6. Verify the saved file, loaded values, and actual behavior separately.
+1. 설치된 앱의 버전과 활성 설정 파일을 확인한다.
+2. 진행 중인 작업이 있다면 완료를 기다리고, 필요한 경우 앱을 종료한다.
+3. 요청과 관련된 항목을 읽고 기존 값을 보존한 채 변경한다.
+4. 문법·타입·범위를 검사하고 파일을 원자적으로 교체한다.
+5. 문서화된 방식으로 재로드하거나 다시 실행한다.
+6. 저장 파일, 앱이 로드한 값, 실제 기능을 구분해서 검증한다.
 
-If a GUI can overwrite external edits with old in-memory values, explicitly instruct
-users to close the app before editing and restart afterward. Opening Settings should
-not be assumed to reload the file.
+GUI가 메모리에 보관한 이전 값을 저장하면서 외부 편집을 덮어쓸 수 있다면,
+“편집 전 종료, 편집 후 재실행”을 분명하게 적는다. 설정 창을 여는 것과 파일을
+재로드하는 것은 같은 동작으로 가정하지 않는다.
 
-Prefer separating credentials from general preferences. If they share a file, say so
-in the header and local instructions, and advise against logging the entire contents.
-Protect credential files and backups using platform-appropriate access controls,
-such as `0600` on macOS/Linux or a user-restricted ACL on Windows.
-Editing a configuration file does not grant OS microphone, accessibility, or global
-shortcut permissions.
+자격 증명은 일반 환경설정과 분리하는 것이 좋다. 같은 파일에 있다면 파일 첫머리와
+로컬 안내에서 알려주고 전체 내용을 로그에 출력하지 않도록 안내한다.
+자격 증명 파일과 백업에는 플랫폼에 맞는 접근 제한을 적용한다. 예를 들어 macOS·Linux는
+`0600` 파일 권한, Windows는 해당 사용자에게 제한된 ACL을 사용할 수 있다.
+설정 파일을 편집하는 것으로 OS의 마이크·접근성·전역 단축키 권한이 부여되는 것은 아니다.
 
-When changing names or schemas, define legacy loading, precedence, and subsequent
-save behavior. Upgrades must preserve existing languages, shortcuts, and credentials.
+파일 이름·스키마를 바꿀 때는 이전 파일의 로드, 새 파일과의 우선순위, 저장 후의
+동작을 함께 정의한다. 기존 설치 사용자의 언어·단축키·자격 증명이 초기화되면 안 된다.
